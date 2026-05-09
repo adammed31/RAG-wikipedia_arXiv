@@ -50,8 +50,8 @@ Question
 │  (dense vectors)         │   │  BM25Retriever       │
 │  BAAI/bge-small-en       │   │  (keyword search)    │
 └──────────────┬───────────┘   └──────────┬───────────┘
-               │    EnsembleRetriever (RRF)│
-               └──────────────┬────────────┘
+               │  EnsembleRetriever (RRF) │
+               └──────────────┬───────────┘
                               │
                               ▼
                     ┌─────────────────┐
