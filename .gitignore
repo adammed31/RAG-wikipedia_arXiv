@@ -1,0 +1,11 @@
+data/raw/
+data/indexes/
+data/cache/
+data/logs/
+data/eval/
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+.venv/
+.DS_Store
