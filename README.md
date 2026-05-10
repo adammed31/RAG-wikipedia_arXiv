@@ -61,11 +61,13 @@ Use the sidebar to filter sources, switch models, or compare answers side-by-sid
 
 ## Project structure
 
+```
 RAG-wikipedia_arXiv/
 ├── src/          # Core logic (ingest, index, retrieve, generate)
 ├── app/          # Streamlit interface
 ├── scripts/      # Build tools
 ├── tests/        # Tests
 └── data/         # Runtime files (gitignored)
+```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details.
