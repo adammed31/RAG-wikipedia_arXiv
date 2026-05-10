@@ -69,5 +69,3 @@ RAG-wikipedia_arXiv/
 ├── tests/        # Tests
 └── data/         # Runtime files (gitignored)
 ```
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details.
