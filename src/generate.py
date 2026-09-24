@@ -10,25 +10,26 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
 SYSTEM_PROMPT = """\
-You are a scientific AI assistant specializing in AI, ML, Mathematics, and Physics.
+You are a scientific AI assistant. You must answer ONLY using the context passages provided. \
+Never use your training knowledge — if the context does not contain the information, say so explicitly.
 
-When answering, ALWAYS use this exact structure:
+Structure your answer as follows:
 
-**Definition:** 1-2 sentence clear answer.
+**Definition:** 1-2 sentence answer taken directly from the context.
 
-**Explanation:** Full technical explanation. CRITICAL: if multiple methods or variants exist (e.g. Gini importance AND permutation importance), you MUST describe ALL of them — never mention only one when several exist in the context.
+**Explanation:** Technical explanation using ONLY facts stated in the context. Cover ALL methods or variants mentioned in the context.
 
-**Example:** Concrete real-world scenario with numbers. Show the calculation step by step when possible.
+**Example (if in context):** Include an example ONLY if it appears explicitly in the context. Do NOT invent examples.
 
-**Formula (if applicable):** Write ALL mathematical formulas using LaTeX wrapped in $$ delimiters. Example: $$\\text{{Gini}}(t) = 1 - \\sum_{{i=1}}^{{K}} p_i^2$$. Define every variable. ALWAYS use $$...$$ — never plain text.
+**Formula (if in context):** Write formulas in $$LaTeX$$ ONLY if they appear in the context. Do NOT invent formulas.
 
 **Sources:** Cite every passage used as [Article Title].
 
 Hard rules:
-- Cover ALL methods found in context, not just the first one.
-- ALWAYS use $$...$$ for every equation — never plain text formulas.
-- Never invent facts not present in the context passages.
-- If context is insufficient for a complete answer, state exactly what is missing."""
+- ONLY use information explicitly present in the context. Zero outside knowledge.
+- If context is insufficient, write: "The context does not contain enough information to answer this fully."
+- ALWAYS use $$...$$ for equations — never plain text math.
+- Never cite or reference sources not present in the context."""
 
 _prompt = ChatPromptTemplate.from_messages([
     ("system", SYSTEM_PROMPT),
@@ -36,7 +37,7 @@ _prompt = ChatPromptTemplate.from_messages([
 ])
 
 
-def build_prompt(query: str, chunks: list[tuple[dict, float]], max_chars: int = 6000) -> tuple[str, list[dict]]:
+def build_prompt(query: str, chunks: list[tuple[dict, float]], max_chars: int = 3500) -> tuple[str, list[dict]]:
     context_parts: list[str] = []
     sources: list[dict] = []
     used = 0
@@ -72,7 +73,7 @@ async def stream_answer(
         model=model or OLLAMA_MODEL,
         base_url=OLLAMA_URL,
         temperature=0.1,
-        num_ctx=4096,
+        num_ctx=2048,
     )
     chain = _prompt | llm | StrOutputParser()
 

@@ -1,0 +1,42 @@
+[
+  {
+    "query": "How does the transformer architecture use self-attention?",
+    "relevant_titles": ["Attention Is All You Need"]
+  },
+  {
+    "query": "What is BERT and how is it pre-trained on masked language modeling?",
+    "relevant_titles": ["BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding"]
+  },
+  {
+    "query": "How does LLaMA differ from other open-source language models?",
+    "relevant_titles": ["LLaMA: Open and Efficient Foundation Language Models", "Llama 2: Open Foundation and Fine-Tuned Chat Models"]
+  },
+  {
+    "query": "What is a diffusion model and how does the denoising process work?",
+    "relevant_titles": ["Denoising Diffusion Probabilistic Models", "High-Resolution Image Synthesis with Latent Diffusion Models"]
+  },
+  {
+    "query": "How does deep reinforcement learning train agents to play Atari games?",
+    "relevant_titles": ["Playing Atari with Deep Reinforcement Learning"]
+  },
+  {
+    "query": "What is LoRA and how does it reduce the number of trainable parameters?",
+    "relevant_titles": ["LoRA: Low-Rank Adaptation of Large Language Models"]
+  },
+  {
+    "query": "How does Mamba achieve linear-time sequence modeling without attention?",
+    "relevant_titles": ["Mamba: Linear-Time Sequence Modeling with Selective State Spaces"]
+  },
+  {
+    "query": "What is chain-of-thought prompting and why does it improve reasoning?",
+    "relevant_titles": ["Chain-of-Thought Prompting Elicits Reasoning in Large Language Models"]
+  },
+  {
+    "query": "What is retrieval-augmented generation and how does it ground LLM answers?",
+    "relevant_titles": ["Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks", "Retrieval-augmented generation"]
+  },
+  {
+    "query": "How does word2vec learn word embeddings from text?",
+    "relevant_titles": ["Efficient Estimation of Word Representations in Vector Space"]
+  }
+]

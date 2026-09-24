@@ -2,7 +2,13 @@
 Run: streamlit run app/main.py
 """
 
+import os
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 import asyncio
+import json
 import re
 import sys
 import time
@@ -19,9 +25,40 @@ from src.config import FAISS_LC_DIR, BM25_LC_FILE, CHUNKS_FILE, OLLAMA_URL
 from src.generate import extract_citations, stream_answer
 from src.index import load_chunks, load_indexes
 from src.logger import log_feedback, log_query
+from src.metrics import faithfulness_score, latency_stats, recall_at_k
 from src.retrieve import retrieve
 
-ALL_MODELS = ["llama3.1:8b", "qwen2.5:14b", "mistral-small3.1"]
+ALL_MODELS = ["qwen2.5:14b", "llama3.1:8b", "llama3.2:3b", "mistral-small3.1"]
+
+EVAL_FILE = Path(__file__).parent.parent / "data" / "eval" / "eval_set.json"
+EVAL_K = [1, 3, 5]
+
+
+async def _recall_eval_async(lc_faiss, bm25, chunk_store):
+    with open(EVAL_FILE, encoding="utf-8") as f:
+        eval_set = json.load(f)
+    max_k = max(EVAL_K)
+    per_query = {k: [] for k in EVAL_K}
+    faith_scores = []
+    for item in eval_set:
+        chunks, _, _, _ = await retrieve(
+            item["query"], lc_faiss, bm25, chunk_store,
+            source_filter="arxiv", top_k=max_k,
+        )
+        titles = [c["title"] for c, _ in chunks]
+        for k in EVAL_K:
+            per_query[k].append(recall_at_k(titles[:k], item["relevant_titles"]))
+        if chunks:
+            stream, _ = await stream_answer(item["query"], chunks)
+            buf = []
+            async for token in stream:
+                buf.append(token)
+            answer = "".join(buf)
+            f = await faithfulness_score(chunks, answer)
+            faith_scores.append(f)
+    recall = {k: sum(v) / len(v) for k, v in per_query.items()}
+    recall["faithfulness"] = sum(faith_scores) / len(faith_scores) if faith_scores else 0.0
+    return recall
 
 
 def _fix_latex(text: str) -> str:
@@ -143,6 +180,20 @@ with st.sidebar:
         st.error("❌ Indexes not built yet")
         st.code("python scripts/build.py", language="bash")
 
+    st.divider()
+    st.subheader("🎯 Recall@K")
+    _results_file = EVAL_FILE.parent / "results.json"
+    if _results_file.exists():
+        _res = json.load(open(_results_file))
+        cols = st.columns(len(EVAL_K))
+        for col, k in zip(cols, EVAL_K):
+            col.metric(f"R@{k}", f"{_res.get(f'recall_{k}', '—'):.2f}")
+        if "faithfulness" in _res:
+            st.metric("Faithfulness", f"{_res['faithfulness']:.2f}",
+                      help="Avg over eval set · run eval_recall.py to update")
+    else:
+        st.caption("Lance `eval_recall.py --faithfulness` pour afficher les métriques")
+
     if st.button("🗑️ Clear cache", use_container_width=True):
         cache_store.clear()
         st.toast("Cache cleared!")
@@ -211,10 +262,13 @@ if query:
         sub_queries = [query]
 
         with st.spinner("Searching…"):
-            chunks, query_type, sub_queries = asyncio.run(
+            t_retrieve_start = time.time()
+            chunks, query_type, sub_queries, step_timing = asyncio.run(
                 retrieve(query, lc_faiss, bm25_retriever,
                          chunk_store, source_filter=source_filter, model=model_a)
             )
+            t_retrieve = time.time() - t_retrieve_start
+            st.session_state["last_step_timing"] = {**step_timing, "query_type": query_type}
 
         if not chunks:
             st.warning("No relevant sources found in the index for this question. Try a different query or build a larger index.")
@@ -232,15 +286,24 @@ if query:
             token_stream, srcs = asyncio.run(stream_answer(query, chunks, model=model))
             async def _collect():
                 buf = []
+                ttft = 0.0
+                t_start = time.time()
                 async for token in token_stream:
+                    if not buf and token.strip():
+                        ttft = (time.time() - t_start) * 1000
                     buf.append(token)
                     text = _fix_latex("".join(buf))
                     cursor = "" if text.count("$$") % 2 != 0 else "▌"
                     placeholder.markdown(text + cursor)
                 final = _fix_latex("".join(buf))
                 placeholder.markdown(final)
-                return final
-            return asyncio.run(_collect()), srcs
+                return final, ttft
+            result, ttft_ms = asyncio.run(_collect())
+            return result, srcs, ttft_ms
+
+        from_cache = False
+        t_generate = 0.0
+        ttft_ms    = 0.0
 
         if compare_mode:
             col1, col2 = st.columns(2)
@@ -250,12 +313,11 @@ if query:
             with col2:
                 st.caption(f"🤖 `{model_b}`")
                 ph2 = st.empty()
-            answer_a, sources   = _run_stream(ph1, model_a)
-            answer_b, _         = _run_stream(ph2, model_b)
+            answer_a, sources, _  = _run_stream(ph1, model_a)
+            answer_b, _, _        = _run_stream(ph2, model_b)
             full_answer = f"**{model_a}:**\n{answer_a}\n\n---\n\n**{model_b}:**\n{answer_b}"
         else:
             full_answer  = ""
-            from_cache   = False
             cache_key    = f"{query}||{source_filter}||{selected_model}"
             if use_cache:
                 cached = cache_store.get(cache_key)
@@ -269,9 +331,12 @@ if query:
             if not from_cache:
                 ph = st.empty()
                 try:
-                    full_answer, sources = _run_stream(ph, selected_model)
+                    t_gen_start = time.time()
+                    full_answer, sources, ttft_ms = _run_stream(ph, selected_model)
+                    t_generate = time.time() - t_gen_start
                 except Exception as e:
                     full_answer = f"❌ Error: {e}"
+                    t_generate = 0.0
                     ph.error(full_answer)
 
                 if use_cache and full_answer and not full_answer.startswith("❌"):
@@ -284,13 +349,34 @@ if query:
 
         latency_ms = int((time.time() - t0) * 1000)
 
+        if not from_cache:
+            st.caption(
+                f"⏱️ Retrieval `{t_retrieve:.1f}s` · "
+                f"Generation `{t_generate:.1f}s` · "
+                f"Total `{latency_ms / 1000:.1f}s`"
+            )
+
+        f_score = 0.0
+        if not compare_mode and not from_cache and full_answer and not full_answer.startswith("❌"):
+            with st.spinner("Evaluating faithfulness…"):
+                f_score = asyncio.run(faithfulness_score(chunks, full_answer, model=selected_model))
+            if f_score >= 0.8:
+                label, color = "Highly faithful", "green"
+            elif f_score >= 0.5:
+                label, color = "Partially faithful", "orange"
+            else:
+                label, color = "Low faithfulness", "red"
+            st.markdown(
+                f"**Faithfulness:** :{color}[{label} · {f_score:.2f}]",
+                help="Fraction of answer claims supported by the retrieved context (LLM-as-judge).",
+            )
+
         if sources:
             n_wiki_src  = sum(1 for s in sources if s.get("source") == "wikipedia")
             n_arxiv_src = sum(1 for s in sources if s.get("source") == "arxiv")
             label = f"📚 {len(sources)} sources"
             if n_wiki_src and n_arxiv_src:
                 label += f" ({n_wiki_src} Wikipedia · {n_arxiv_src} arXiv)"
-            label += f" · {latency_ms}ms"
             with st.expander(label, expanded=False):
                 for src in sources:
                     _render_source(src)
@@ -305,7 +391,15 @@ if query:
                 log_feedback(query, full_answer, "down")
                 st.toast("Thanks, we'll improve!")
 
-    log_query(query, query_type, sub_queries, sources, full_answer, latency_ms, False)
+    log_query(
+        query, query_type, sub_queries, sources, full_answer, latency_ms,
+        cached=from_cache,
+        retrieve_ms=int(t_retrieve * 1000),
+        generate_ms=int(t_generate * 1000),
+        ttft_ms=ttft_ms,
+        faithfulness=f_score,
+        step_timing=st.session_state.get("last_step_timing"),
+    )
     st.session_state.messages.append({
         "role": "assistant",
         "content": full_answer,

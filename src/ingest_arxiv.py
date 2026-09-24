@@ -102,16 +102,16 @@ FOUNDATIONAL_IDS = [
 # ── Recent papers by category (fills remaining budget) ───────────────────────
 
 CATEGORIES = [
-    ("cs.AI",         60),
-    ("cs.LG",         60),
-    ("cs.CL",         60),
-    ("cs.CV",         40),
-    ("cs.IR",         30),
-    ("math.ST",       30),
-    ("quant-ph",      30),
-    ("physics.data-an", 20),
+    ("cs.AI",         150),
+    ("cs.LG",         150),
+    ("cs.CL",         100),
+    ("cs.CV",          80),
+    ("cs.IR",          60),
+    ("math.ST",        50),
+    ("quant-ph",       50),
+    ("physics.data-an", 30),
 ]
-TOTAL_BUDGET = 600   # foundational + recent
+TOTAL_BUDGET = 1000   # foundational + recent
 
 
 def _extract_pdf_text(result: arxiv.Result) -> str | None:

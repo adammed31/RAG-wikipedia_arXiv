@@ -8,7 +8,7 @@ import re
 import time
 import unicodedata
 
-import wikipedia
+import requests
 from tqdm import tqdm
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -40,39 +40,66 @@ def _clean(text: str) -> str:
     return text.strip()
 
 
+_WP_API = "https://en.wikipedia.org/w/api.php"
+_SESSION = requests.Session()
+_SESSION.headers.update({"User-Agent": "RAG-educational-project/1.0 (https://github.com; educational use)"})
+
+
+def _wp_search(topic: str, limit: int = 15) -> list[str]:
+    resp = _SESSION.get(_WP_API, params={
+        "action": "query", "list": "search",
+        "srsearch": topic, "srlimit": limit, "format": "json",
+    }, timeout=10)
+    resp.raise_for_status()
+    return [r["title"] for r in resp.json()["query"]["search"]]
+
+
+def _wp_fetch(title: str) -> dict | None:
+    resp = _SESSION.get(_WP_API, params={
+        "action": "query", "titles": title,
+        "prop": "extracts|info", "explaintext": 1,
+        "inprop": "url", "format": "json",
+    }, timeout=15)
+    resp.raise_for_status()
+    pages = resp.json()["query"]["pages"]
+    page = next(iter(pages.values()))
+    if "missing" in page or not page.get("extract"):
+        return None
+    return {
+        "id": str(page["pageid"]),
+        "title": page["title"],
+        "text": _clean(page["extract"]),
+        "url": f"https://en.wikipedia.org/wiki/{page['title'].replace(' ', '_')}",
+        "source": "wikipedia",
+    }
+
+
 def fetch_wikipedia(topics: list[str] = WIKI_TOPICS, max_total: int = MAX_ARTICLES) -> list[dict]:
-    wikipedia.set_lang("en")
     seen_titles: set[str] = set()
     articles = []
 
     for topic in tqdm(topics, desc="Wikipedia topics"):
         if len(articles) >= max_total:
             break
-        time.sleep(2)
+        time.sleep(1)
         try:
-            search_results = wikipedia.search(topic, results=30)
+            titles = _wp_search(topic, limit=15)
         except Exception as e:
             log.warning(f"Search failed for '{topic}': {e}")
+            time.sleep(5)
             continue
 
-        for title in search_results:
+        for title in titles:
             if len(articles) >= max_total:
                 break
             if title in seen_titles:
                 continue
             seen_titles.add(title)
             try:
-                page = wikipedia.page(title, auto_suggest=False)
-                text = _clean(page.content)
-                if len(text) < 300:
-                    continue
-                articles.append({
-                    "id": str(page.pageid),
-                    "title": page.title,
-                    "text": text,
-                    "url": page.url,
-                    "source": "wikipedia",
-                })
+                time.sleep(0.5)
+                article = _wp_fetch(title)
+                if article and len(article["text"]) >= 300:
+                    articles.append(article)
             except Exception:
                 continue
 
